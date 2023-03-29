@@ -1,0 +1,31 @@
+{
+  "name": "bybit-addresses",
+  "version": "1.0.0",
+  "description": "Playwright script for adding verified addresses to Bybit",
+  "main": "index.js",
+  "scripts": {
+    "start": "node ./dist/index.js",
+    "serve": "npx ts-node index.ts",
+    "dev": "nodemon index.ts --ignore '*.json'",
+    "postinstall": "npx tsc && touch addresses.txt",
+    "build": "npx tsc && npm run start"
+  },
+  "author": "Sa7cez",
+  "license": "ISC",
+  "dependencies": {
+    "@types/node": "^18.15.7",
+    "authenticator": "^1.1.5",
+    "dotenv": "^16.0.3",
+    "got": "^11.8.6",
+    "inquirer": "^8.2.5",
+    "mail-notifier": "^0.5.0",
+    "nodemon": "^2.0.22",
+    "playwright": "^1.32.1",
+    "playwright-extra": "^4.3.6",
+    "puppeteer": "^19.8.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.2"
+  }
+}
