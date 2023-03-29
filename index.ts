@@ -43,7 +43,10 @@ const waitCode = async () =>
     mailClient
       .on('mail', (mail) => {
         const links = mail.subject.includes('Bybit') && mail.html ? mail.html.match(/<strong>(\d{6})<\/strong>/) : null
-        if (links) resolve(links.pop())
+        if (links) {
+          mailClient.stop()
+          resolve(links.pop())
+        }
       })
       .start()
       .on('error', async () => resolve(await waitCode()))
@@ -92,7 +95,8 @@ const addAddress = async (page: Page, address: string, settings: any) => {
       .click({ timeout: 10000 })
       .catch(() => notify())
 
-    code = (await waitCode()) || code
+    log('Code:', (code = (await waitCode()) || code))
+
     if (code) {
       await submitCredentials(page, code)
       await page.waitForTimeout(100)
@@ -173,6 +177,8 @@ const main = async () => {
     await page.reload({ waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(settings.timeout * 1000)
   }
+
+  log('\nAll addresses processed (no guarantees)')
 }
 
 if (!AUTHENTICATOR) log('Need Google Authentiticator Bybit Key to bypass 2fa verification!')
