@@ -1,6 +1,6 @@
-# Bybit add addresses
+# CEX whitelister
 
-The script allows you to add verified addresses to bybit.
+The script allows you to add verified addresses to BYBIT/OKX.
 
 ## Requirements
 
@@ -9,12 +9,12 @@ The script allows you to add verified addresses to bybit.
 
 ## Secure
 
-Script use local `state.json` file to store your bybit browser session.
+Script use local `OKX.json` and `BYBIT.json` files to store your browser session. Please be carefull!
 
 ## Setup bot
 
-1. Download ZIP and extract it to a folder (or better use git(`https://git-scm.com/`) for getting updates)
-2. Install node.js: `https://nodejs.org/en/` (LTS)
+1. Download ZIP and extract it to a folder (or better use [git](https://git-scm.com/) for getting updates)
+2. Install [node.js](https://nodejs.org/en/) (LTS) and [pnpm](https://pnpm.io/installation) package manager
 3. Open folder with the bot in `terminal` or `cmd`
 
 ```bash
