@@ -5,8 +5,8 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 import notifier from 'mail-notifier'
 import { Page } from 'playwright'
 import fs from 'fs'
-import inquirer from 'inquirer'
 import got from 'got'
+import Ask from './asks'
 
 // Settings
 dotenv.config()
@@ -14,9 +14,10 @@ chromium.use(StealthPlugin())
 
 // Const
 const log = console.log,
-  HEADLESS = false,
+  ui = new Ask(),
   FILE = 'addresses.txt',
-  AUTHENTICATOR = process.env.AUTHENTICATOR || null,
+  BYBIT_AUTHENTICATOR = process.env.BYBIT_AUTHENTICATOR || null,
+  OKX_AUTHENTICATOR = process.env.OKX_AUTHENTICATOR || null,
   EMAIL_LOGIN = process.env.EMAIL_LOGIN || null,
   EMAIL_PASSWORD = process.env.EMAIL_PASSWORD || null,
   EMAIL_HOST = process.env.EMAIL_HOST || 'imap.gmail.com',
@@ -36,29 +37,29 @@ const mailClient = notifier({
 }).on('error', (err) => log('Email connection error:', err))
 
 //  Wait verification code on email
-const waitCode = async () =>
-  new Promise<string>((resolve, reject) => {
+const waitCode = async (subject = 'Bybit', regex = /<strong>(\d{6})<\/strong>/, timeout = 45000) =>
+  new Promise<string>((resolve) => {
     log('Wait verification code...')
-    setTimeout(() => resolve(null), 45000)
+    setTimeout(() => resolve(null), timeout)
     mailClient
       .on('mail', (mail) => {
-        const links = mail.subject.includes('Bybit') && mail.html ? mail.html.match(/<strong>(\d{6})<\/strong>/) : null
+        const links = mail.subject.indexOf(subject) > -1 && (mail.html ? mail.html.match(regex) : null)
         if (links) {
           mailClient.stop()
           resolve(links.pop())
         }
       })
       .start()
-      .on('error', async () => resolve(await waitCode()))
+      .on('error', async () => resolve(await waitCode('')))
   })
 
 // Get 2fa token
-const getToken = () => authenticator.generateToken(AUTHENTICATOR)
+const getToken = (service) => authenticator.generateToken(service)
 
 // Fill/refill fields and submit
 const submitCredentials = async (page: Page, code: string) => {
   await page.getByPlaceholder('Enter verification code').type(code)
-  await page.getByPlaceholder('Enter Google Authenticator code').type(await getToken())
+  await page.getByPlaceholder('Enter Google Authenticator code').type(await getToken(BYBIT_AUTHENTICATOR))
   return await page.getByRole('button').filter({ hasText: 'Submit' }).click()
 }
 
@@ -73,7 +74,8 @@ const notify = async (message = 'Please back to browser and solve captcha!') =>
       })
     : log(message)
 
-const addAddress = async (page: Page, address: string, settings: any) => {
+// Add bybit address
+const addBybitAddress = async (page: Page, address: string, settings: any) => {
   log('Try to add', address)
   await page.getByLabel('plus').click()
   await page.getByRole('dialog', { name: 'Add' }).locator('#coin').type(settings.blockchain)
@@ -105,38 +107,50 @@ const addAddress = async (page: Page, address: string, settings: any) => {
   }
 }
 
-const questions = [
-  {
-    name: 'blockchain',
-    type: 'string',
-    message: `Input blockchain name (BTC, ETH or other):`,
-    default: 'ETH'
-  },
-  {
-    name: 'network',
-    type: 'string',
-    message: `Input network first letter(s):`,
-    default: 'E'
-  },
-  {
-    name: 'remark',
-    type: 'string',
-    message: `Input remark for added addresses:`,
-    default: 'Batch'
-  },
-  {
-    name: 'timeout',
-    type: 'number',
-    message: `Input timeout in seconds:`,
-    default: 120
+// Add OKX addresses
+const fillList = async (list, addresses, remark) => {
+  let counter = 0
+  for (const element of await list.getByPlaceholder('You can also use a .crypto domain').all())
+    if (addresses[counter]) {
+      await element.fill(addresses[counter])
+      counter++
+    }
+  if (remark) for (const element of await list.getByPlaceholder('e.g. my wallet').all()) await element.fill(remark)
+}
+
+const tryConfirm = async (page, code) => {
+  try {
+    if (code) await page.getByPlaceholder('Enter email code').fill(code)
+    await page.getByText('Authentication app', { exact: true }).click()
+    await page.getByPlaceholder('Enter the authentication app code').fill(getToken(OKX_AUTHENTICATOR))
+    await page.getByRole('button').filter({ hasText: 'Confirm' }).click()
+    return true
+  } catch (e) {
+    log(e)
+    return false
   }
-]
+}
+
+const addNewBatchOfAddresses = async (page: Page, addresses, remark) => {
+  await page.goto('https://www.okx.com/balance/withdrawal-address/eth/2', {
+    waitUntil: 'domcontentloaded'
+  })
+  await page.getByRole('button').filter({ hasText: 'Add a new address' }).click()
+
+  for (let i = 0; i < addresses.length - 1; i++) await page.getByText('Add address', { exact: true }).click()
+  await fillList(page, addresses, remark)
+  for (const element of await page.getByRole('checkbox').all()) await element.check()
+
+  await page.getByText('Send code', { exact: true }).first().click()
+  const code = await waitCode('verification code', /(\d{6})<\/div>/, 60000)
+  return await tryConfirm(page, code)
+}
 
 const getAddresses = async () => [
   ...new Set(
     await fs.promises
       .readFile(FILE, 'utf-8')
-      .then((addresses) => addresses.split('\n').filter((item) => item.length > 0))
+      .then((addresses) => [...new Set(addresses.split('\n').filter((item) => item.length > 0))])
       .catch(() => [])
   )
 ]
@@ -145,42 +159,99 @@ const main = async () => {
   let addresses = await getAddresses()
   if (addresses.length === 0) return log(`Please fill file ${FILE}`)
   else log(`\nFound ${addresses.length} addresses to add!\n`)
-  const settings = await inquirer.prompt(questions)
+  let platform = await ui.askPlatform()
+  let settings = await ui.askSettings(platform)
 
-  const browser = await chromium.launch({ headless: HEADLESS })
-  const context = await browser
-    .newContext({ storageState: 'state.json' })
-    .catch(() => browser.newContext({ locale: 'en_US' }))
+  const sessionExisted = fs.existsSync(`${platform}.json`)
+  const browser = await chromium.launch({
+    headless: platform !== 'BYBIT' ? sessionExisted : false,
+    args: ['--disable-web-security', '--start-fullscreen']
+  })
+  const context = await browser.newContext({ storageState: `${platform}.json` }).catch(() =>
+    browser.newContext({
+      locale: 'en_US'
+    })
+  )
   const page = await context.newPage()
 
-  if (!fs.existsSync('state.json')) {
-    await page.goto('https://www.bybit.com/login')
-    await page.waitForURL('https://www.bybit.com/en-US/dashboard', {
-      timeout: 180000
-    })
-    await context.storageState({ path: 'state.json' })
+  if (!sessionExisted) {
+    if (platform === 'OKX') {
+      await page.goto('https://www.okx.com/account/login')
+      await page.getByRole('button').filter({ hasText: 'Accept All Cookies' }).click()
+      await page.getByText('QR code').click({ force: true })
+      await page.waitForSelector('.qr-container-v2')
+      await page.waitForSelector('.verify-code-module')
+      const code = getToken(OKX_AUTHENTICATOR)
+      await page.keyboard.type(code)
+      await page.getByRole('button').filter({ hasText: 'Next' }).click()
+      await page.waitForURL('https://www.okx.com/account/users', {
+        timeout: 180000
+      })
+    } else {
+      await page.goto('https://www.bybit.com/login')
+      await page.waitForURL('https://www.bybit.com/en-US/dashboard', {
+        timeout: 180000
+      })
+    }
+    await context.storageState({ path: `${platform}.json` })
+    log('Session successfully created and saved!')
+    await page.waitForTimeout(3000)
   }
 
-  await page.goto('https://www.bybit.com/user/assets/money-address', {
-    waitUntil: 'domcontentloaded'
-  })
-  await page.waitForTimeout(3000)
+  switch (platform) {
+    case 'OKX':
+      // Filter already added addresses
+      page.on('response', async (response) => {
+        if (response.url().indexOf('withdraw/address-by-type') > -1) {
+          const added = (await response.json()).data.addressList.map((i) => i.address)
+          log(`You have ${added.length} addresses in OKX whitelist!`)
+          await fs.promises.writeFile(`added-${platform}.txt`, added.join('\n'))
+          addresses = addresses.filter((address) => !added.includes(address))
+          log(`Estimate ${addresses.length} new addresses to add!\n`)
+        }
+      })
+      await page.goto('https://www.okx.com/balance/withdrawal-address/eth/2', {
+        waitUntil: 'networkidle'
+      })
 
-  for (const address of addresses) {
-    const result = await addAddress(page, address, settings)
-    if (result) {
-      addresses = addresses.filter((item) => item !== address)
-      log(`Success, delete key ...${address.slice(-10)} from ${FILE}`)
-      await fs.promises.writeFile(FILE, addresses.join('\n'))
-    }
-    log('Result:', result, `\nWait ${settings.timeout} seconds...\n`)
-    await page.reload({ waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(settings.timeout * 1000)
+      // Processing
+      while (addresses.length > 0) {
+        try {
+          const batch = addresses.slice(0, 20)
+          await addNewBatchOfAddresses(page, batch, settings.remark)
+          await page.waitForTimeout(60000)
+        } catch (e) {
+          log(e, 'Something wrong, retry')
+        }
+      }
+      break
+
+    case 'BYBIT':
+      await page.goto('https://www.bybit.com/user/assets/money-address', {
+        waitUntil: 'domcontentloaded'
+      })
+
+      for (const address of addresses) {
+        const result = await addBybitAddress(page, address, settings)
+        if (result) {
+          addresses = addresses.filter((item) => item !== address)
+          log(`Success, delete key ...${address.slice(-10)} from ${FILE}`)
+          await fs.promises.writeFile(FILE, addresses.join('\n'))
+        }
+        log('Result:', result, `\nWait ${settings.timeout} seconds...\n`)
+        await page.reload({ waitUntil: 'domcontentloaded' })
+        await page.waitForTimeout(settings.timeout * 1000)
+      }
+
+      break
+    default:
+      log('Unsupported platform!')
+      break
   }
 
   log('\nAll addresses processed (no guarantees)')
 }
 
-if (!AUTHENTICATOR) log('Need Google Authentiticator Bybit Key to bypass 2fa verification!')
+if (!BYBIT_AUTHENTICATOR || !OKX_AUTHENTICATOR) log('Need Google Authentiticator Key to bypass 2fa verifications!')
 else if (!EMAIL_LOGIN || !EMAIL_PASSWORD || !EMAIL_HOST || !EMAIL_PORT) log('Need IMAP email settings!')
 else main().catch((e) => log(e))

@@ -5,7 +5,7 @@
   "[javascript]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "printWidth": 120,
+  "printWidth": 140,
   "trailingComma": "none",
   "requireConfig": false,
   "singleQuote": true,

@@ -6,7 +6,6 @@ dist
 .env
 .env.local
 .env.*.local
-state.json
 
 # Log files
 npm-debug.log*
@@ -23,3 +22,5 @@ yarn-error.log*
 *.sw?
 *.txt
 *.csv
+OKX.json
+BYBIT.json
