@@ -145,7 +145,11 @@ const tryConfirm = async (page, code) => {
     if (code) await page.getByPlaceholder('Enter email code').fill(code)
     log(`Email code: ${code}`)
     await page.waitForTimeout(200)
-    await page.getByText('Authentication app', { exact: true }).click()
+    try {
+      await page.getByText('Authentication app', { exact: true, timeout: 2000 }).click()
+    } catch (e) {
+      log('Skip switching...')
+    }
     await page.getByPlaceholder('Enter the authentication app code').fill(getToken(OKX_AUTHENTICATOR))
     await page.getByRole('button').filter({ hasText: 'Confirm' }).click()
     return true
