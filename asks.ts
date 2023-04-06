@@ -39,6 +39,12 @@ const questions = {
       type: 'string',
       message: `Input remark for added addresses:`,
       default: 'Batch ' + Date.now()
+    },
+    {
+      name: 'show',
+      type: 'confirm',
+      message: `Show browser?`,
+      default: false
     }
   ]
 }

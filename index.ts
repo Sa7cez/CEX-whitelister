@@ -143,6 +143,8 @@ const fillList = async (list, addresses, remark) => {
 const tryConfirm = async (page, code) => {
   try {
     if (code) await page.getByPlaceholder('Enter email code').fill(code)
+    log(`Email code: ${code}`)
+    await page.waitForTimeout(200)
     await page.getByText('Authentication app', { exact: true }).click()
     await page.getByPlaceholder('Enter the authentication app code').fill(getToken(OKX_AUTHENTICATOR))
     await page.getByRole('button').filter({ hasText: 'Confirm' }).click()
@@ -195,16 +197,17 @@ const main = async () => {
   log('Check credentials:\n')
   log('  OKX 2fa token:', OKX, OKX ? 'OK' : 'add OKX_AUTHENTICATOR to enviroments if you need it!')
   log('  BYBIT 2fa token:', BYBIT, BYBIT ? 'OK' : 'add BYBIT_AUTHENTICATOR to enviroments if you need it!')
-  log('  Email connection:', email)
+  log('  Email connection:', email, '\n')
 
   if (email !== true || platforms.length === 0) return log('\nPlease check provided credentials!')
 
   let platform = await ui.askPlatform(platforms)
   let settings = await ui.askSettings(platform)
+  if (platform === 'BYBIT') settings.show = true
 
   const sessionExisted = fs.existsSync(`${platform}.json`)
   const browser = await chromium.launch({
-    headless: platform !== 'BYBIT' ? sessionExisted : false,
+    headless: platform !== 'BYBIT' ? settings.show : false,
     args: ['--disable-web-security', '--start-fullscreen']
   })
   const context = await browser.newContext({ storageState: `${platform}.json` }).catch(() =>
@@ -243,7 +246,7 @@ const main = async () => {
       // Filter already added addresses
       page.on('response', async (response) => {
         if (response.url().indexOf('withdraw/address-by-type') > -1) {
-          const added = (await response.json()).data.addressList.map((i) => i.address)
+          const added = (await response.json()).data.addressList.map((i) => i.address.toLowerCase())
           log(`You have ${added.length} addresses in OKX whitelist!`)
           await fs.promises.writeFile(`added-${platform}.txt`, added.join('\n'))
           addresses = addresses.filter((address) => !added.includes(address))
@@ -274,7 +277,7 @@ const main = async () => {
       for (const address of addresses) {
         const result = await addBybitAddress(page, address, settings)
         if (result) {
-          addresses = addresses.filter((item) => item !== address)
+          addresses = addresses.filter((item) => item.toLowerCase() !== address)
           log(`Success, delete key ...${address.slice(-10)} from ${FILE}`)
           await fs.promises.writeFile(FILE, addresses.join('\n'))
         }
