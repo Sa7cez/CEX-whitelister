@@ -207,7 +207,7 @@ const main = async () => {
 
   const sessionExisted = fs.existsSync(`${platform}.json`)
   const browser = await chromium.launch({
-    headless: platform !== 'BYBIT' ? settings.show : false,
+    headless: !settings.show,
     args: ['--disable-web-security', '--start-fullscreen']
   })
   const context = await browser.newContext({ storageState: `${platform}.json` }).catch(() =>
