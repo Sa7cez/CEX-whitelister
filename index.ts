@@ -159,14 +159,17 @@ const tryConfirm = async (page, code) => {
   }
 }
 
-const addNewBatchOfAddresses = async (page: Page, addresses, remark) => {
-  await page.goto('https://www.okx.com/balance/withdrawal-address/eth/2', {
+const addNewBatchOfAddresses = async (page: Page, targetPage, addresses, settings) => {
+  await page.goto(targetPage, {
     waitUntil: 'domcontentloaded'
   })
   await page.getByRole('button').filter({ hasText: 'Add a new address' }).click()
 
+  await page.getByPlaceholder('Select').click()
+  await page.locator('.okui-select-item.okui-select-item-border-box', { hasText: settings.direction }).click()
+
   for (let i = 0; i < addresses.length - 1; i++) await page.getByText('Add address', { exact: true }).click()
-  await fillList(page, addresses, remark)
+  await fillList(page, addresses, settings.remark)
   for (const element of await page.getByRole('checkbox').all()) await element.check()
 
   await page.getByText('Send code', { exact: true }).first().click()
@@ -250,14 +253,26 @@ const main = async () => {
       // Filter already added addresses
       page.on('response', async (response) => {
         if (response.url().indexOf('withdraw/address-by-type') > -1) {
-          const added = (await response.json()).data.addressList.map((i) => i.address.toLowerCase())
+          const added = (await response.json()).data.addressList
+            .filter((i) => i.targetTypeStr === settings.direction)
+            .map((i) => i.address.toLowerCase())
           log(`You have ${added.length} addresses in OKX whitelist!`)
-          await fs.promises.writeFile(`added-${platform}.txt`, added.join('\n'))
+          await fs.promises.writeFile(`added-${platform}-${settings.direction}.txt`, added.join('\n'))
           addresses = addresses.filter((address) => !added.includes(address))
           log(`Estimate ${addresses.length} new addresses to add!\n`)
         }
       })
-      await page.goto('https://www.okx.com/balance/withdrawal-address/eth/2', {
+      const targetPage =
+        'https://www.okx.com/balance/withdrawal-address/' +
+        (settings.direction.startsWith('ETH')
+          ? 'eth/2'
+          : settings.direction.startsWith('USDC')
+          ? 'usdc/283'
+          : settings.direction.startsWith('USDT')
+          ? 'usdt/7'
+          : 'matic/1696')
+
+      await page.goto(targetPage, {
         waitUntil: 'networkidle'
       })
 
@@ -265,7 +280,7 @@ const main = async () => {
       while (addresses.length > 0) {
         try {
           const batch = addresses.slice(0, 20)
-          await addNewBatchOfAddresses(page, batch, settings.remark)
+          await addNewBatchOfAddresses(page, targetPage, batch, settings)
           await page.waitForTimeout(60000)
         } catch (e) {
           log(e, 'Something wrong, retry')

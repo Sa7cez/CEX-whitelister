@@ -29,10 +29,23 @@ const questions = {
   ],
   OKX: [
     {
-      name: 'blockchain',
-      type: 'string',
-      message: `Input blockchain name (BTC, ETH or other):`,
-      default: 'ETH'
+      name: 'direction',
+      type: 'list',
+      message: 'Choose direction:',
+      choices: [
+        'ETH-ERC20',
+        'ETH-Arbitrum one',
+        'ETH-zkSync Lite',
+        'ETH-Optimism',
+        'USDC-Optimism',
+        'USDC-Arbitrum one',
+        'USDC-Polygon',
+        'USDT-Optimism',
+        'USDT-Arbitrum one',
+        'USDT-Polygon',
+        'MATIC-Polygon'
+      ],
+      default: 'ETH-Arbitrum one'
     },
     {
       name: 'remark',
