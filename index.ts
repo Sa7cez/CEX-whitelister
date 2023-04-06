@@ -30,7 +30,7 @@ const log = console.log,
 let email = false
 const mailClient = notifier({
   user: EMAIL_LOGIN,
-  password: EMAIL_PASSWORD + '1',
+  password: EMAIL_PASSWORD,
   host: EMAIL_HOST,
   markSeen: true,
   port: EMAIL_PORT,
