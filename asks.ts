@@ -44,13 +44,13 @@ const questions = {
 }
 
 class Ask {
-  async askPlatform() {
+  async askPlatform(platforms) {
     const answers = await inquirer.prompt([
       {
         name: 'platform',
         type: 'list',
         message: `Select CEX:`,
-        choices: ['OKX', 'BYBIT'],
+        choices: platforms,
         default: 'OKX'
       }
     ])

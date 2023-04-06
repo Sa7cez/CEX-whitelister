@@ -3,6 +3,7 @@ lockfileVersion: 5.4
 specifiers:
   '@types/node': ^18.15.7
   authenticator: ^1.1.5
+  delay: ^5.0.0
   dotenv: ^16.0.3
   got: ^11.8.6
   inquirer: ^8.2.5
@@ -19,6 +20,7 @@ specifiers:
 dependencies:
   '@types/node': 18.15.11
   authenticator: 1.1.5
+  delay: 5.0.0
   dotenv: 16.0.3
   got: 11.8.6
   inquirer: 8.2.5
@@ -523,6 +525,11 @@ packages:
 
   /defer-to-connect/2.0.1:
     resolution: {integrity: sha512-4tvttepXG1VaYGrRibk5EwJd1t4udunSOVMdLSAL6mId1ix438oPwPZMALY41FCijukO1L0twNcGsdzS7dHgDg==}
+    engines: {node: '>=10'}
+    dev: false
+
+  /delay/5.0.0:
+    resolution: {integrity: sha512-ReEBKkIfe4ya47wlPYf/gu5ib6yUG0/Aez0JQZQz94kiWtRQvZIQbTiehsnwHvLSWJnQdhVeqYue7Id1dKr0qw==}
     engines: {node: '>=10'}
     dev: false
 

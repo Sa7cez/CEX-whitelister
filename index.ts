@@ -7,6 +7,7 @@ import { Page } from 'playwright'
 import fs from 'fs'
 import got from 'got'
 import Ask from './asks'
+import delay from 'delay'
 
 // Settings
 dotenv.config()
@@ -26,23 +27,35 @@ const log = console.log,
   ADMIN = process.env.ADMIN || null
 
 // Initialize email listener
+let email = false
 const mailClient = notifier({
   user: EMAIL_LOGIN,
-  password: EMAIL_PASSWORD,
+  password: EMAIL_PASSWORD + '1',
   host: EMAIL_HOST,
   markSeen: true,
   port: EMAIL_PORT,
   tls: true,
   tlsOptions: { rejectUnauthorized: false }
-}).on('error', (err) => log('Email connection error:', err))
+})
+  .on('error', (err) => {
+    log('Email connection error:', err.message)
+    email = err.message
+  })
+  .on('connected', () => {
+    log('Email successfully connected!')
+    email = true
+  })
+  .start()
+  .stop()
 
 //  Wait verification code on email
-const waitCode = async (subject = 'Bybit', regex = /<strong>(\d{6})<\/strong>/, timeout = 45000) =>
+const waitCode = async (subject = 'Bybit', regex = /<strong>(\d{6})<\/strong>/, timeout = 45000, retry = 0) =>
   new Promise<string>((resolve) => {
     log('Wait verification code...')
     setTimeout(() => resolve(null), timeout)
     mailClient
       .on('mail', (mail) => {
+        log('Get new email:', mail.subject)
         const links = mail.subject.indexOf(subject) > -1 && (mail.html ? mail.html.match(regex) : null)
         if (links) {
           mailClient.stop()
@@ -50,11 +63,20 @@ const waitCode = async (subject = 'Bybit', regex = /<strong>(\d{6})<\/strong>/, 
         }
       })
       .start()
-      .on('error', async () => resolve(await waitCode('')))
+      .on('error', async () => {
+        retry++
+        if (retry < 3) resolve(await waitCode(subject, regex, timeout, retry))
+      })
   })
 
 // Get 2fa token
-const getToken = (service) => authenticator.generateToken(service)
+const getToken = (service) => {
+  try {
+    return authenticator.generateToken(service)
+  } catch (e) {
+    return false
+  }
+}
 
 // Fill/refill fields and submit
 const submitCredentials = async (page: Page, code: string) => {
@@ -146,20 +168,38 @@ const addNewBatchOfAddresses = async (page: Page, addresses, remark) => {
   return await tryConfirm(page, code)
 }
 
-const getAddresses = async () => [
-  ...new Set(
-    await fs.promises
-      .readFile(FILE, 'utf-8')
-      .then((addresses) => [...new Set(addresses.split('\n').filter((item) => item.length > 0))])
-      .catch(() => [])
-  )
-]
+const getAddresses = async () =>
+  [
+    ...new Set(
+      await fs.promises
+        .readFile(FILE, 'utf-8')
+        .then((addresses) => [...new Set(addresses.split('\n').filter((item) => item.length > 0))])
+        .catch(() => [])
+    )
+  ].map((address) => address.toLowerCase().replace('\r', ''))
 
 const main = async () => {
   let addresses = await getAddresses()
   if (addresses.length === 0) return log(`Please fill file ${FILE}`)
   else log(`\nFound ${addresses.length} addresses to add!\n`)
-  let platform = await ui.askPlatform()
+
+  const OKX = getToken(OKX_AUTHENTICATOR)
+  const BYBIT = getToken(BYBIT_AUTHENTICATOR)
+
+  let platforms = []
+  if (OKX) platforms.push('OKX')
+  if (BYBIT) platforms.push('BYBIT')
+
+  await delay(3000)
+
+  log('Check credentials:\n')
+  log('  OKX 2fa token:', OKX ? 'OK' : 'add OKX_AUTHENTICATOR to enviroments if you need it!')
+  log('  BYBIT 2fa token:', BYBIT ? 'OK' : 'add BYBIT_AUTHENTICATOR to enviroments if you need it!')
+  log('  Email connection:', email)
+
+  if (email !== true || platforms.length === 0) return log('\nPlease check provided credentials!')
+
+  let platform = await ui.askPlatform(platforms)
   let settings = await ui.askSettings(platform)
 
   const sessionExisted = fs.existsSync(`${platform}.json`)
