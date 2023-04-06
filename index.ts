@@ -193,8 +193,8 @@ const main = async () => {
   await delay(3000)
 
   log('Check credentials:\n')
-  log('  OKX 2fa token:', OKX ? 'OK' : 'add OKX_AUTHENTICATOR to enviroments if you need it!')
-  log('  BYBIT 2fa token:', BYBIT ? 'OK' : 'add BYBIT_AUTHENTICATOR to enviroments if you need it!')
+  log('  OKX 2fa token:', OKX, OKX ? 'OK' : 'add OKX_AUTHENTICATOR to enviroments if you need it!')
+  log('  BYBIT 2fa token:', BYBIT, BYBIT ? 'OK' : 'add BYBIT_AUTHENTICATOR to enviroments if you need it!')
   log('  Email connection:', email)
 
   if (email !== true || platforms.length === 0) return log('\nPlease check provided credentials!')
