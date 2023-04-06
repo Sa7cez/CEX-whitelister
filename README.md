@@ -5,7 +5,7 @@ The script allows you to add verified addresses to BYBIT/OKX.
 ## Requirements
 
 1. Rename `env` to `.env` and input values
-2. Create and fill `addresses.txt` file with your blockchain addresses
+2. Create and fill `addresses.txt` file with your blockchain addresses line-by-line
 
 ## Secure
 

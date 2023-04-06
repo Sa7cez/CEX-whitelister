@@ -1,7 +1,7 @@
 OKX_AUTHENTICATOR=ABCD1234EF45789 # Scan QR code and cut 15-digits key
 BYBIT_AUTHENTICATOR=ABCD1234EF45789 # Scan QR code and cut 15-digits key
 EMAIL_LOGIN=Username
-EMAIL_PASSWORD= # Use App Password if you use 2fa https://myaccount.google.com/apppasswords
+EMAIL_PASSWORD= # Use App Password if you use 2fa https://support.google.com/accounts/answer/185833
 EMAIL_HOST=imap.gmail.com
 EMAIL_PORT=993
 TELEGRAM=1343242334:AAGPs3dsfsaNwXAL4lmvs2aUn-tLhtEIHrNo # bot token from https://t.me/BotFather
