@@ -262,6 +262,7 @@ const main = async () => {
           log(`Estimate ${addresses.length} new addresses to add!\n`)
         }
       })
+
       const targetPage =
         'https://www.okx.com/balance/withdrawal-address/' +
         (settings.direction.startsWith('ETH')
@@ -289,12 +290,18 @@ const main = async () => {
       break
 
     case 'BYBIT':
+      const response = await page.goto(
+        `https://api2.bybit.com/v3/private/cht/asset-withdraw/address/address-list?coin=${settings.blockchain}&address_type=2&page=1&limit=10000`
+      )
+      const alreadyExist = await response.json().then((r) => r.result.data.map((i) => i.address))
+      fs.promises.writeFile(`added-BYBIT-${settings.blockchain}.txt`, alreadyExist.join('\n'))
+
       await page.goto('https://www.bybit.com/user/assets/money-address', {
         waitUntil: 'domcontentloaded'
       })
 
-      for (const address of addresses) {
-        const result = await addBybitAddress(page, address, settings)
+      for (const address of addresses.filter((address) => !alreadyExist.includes(address))) {
+        const result = await addBybitAddress(page, address, settings).catch((e) => false)
         if (result) {
           addresses = addresses.filter((item) => item.toLowerCase() !== address)
           log(`Success, delete key ...${address.slice(-10)} from ${FILE}`)
