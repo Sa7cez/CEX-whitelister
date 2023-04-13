@@ -52,7 +52,6 @@ const mailClient = notifier({
 const waitCode = async (subject = 'Bybit', regex = /<strong>(\d{6})<\/strong>/, timeout = 45000, retry = 0) =>
   new Promise<string>((resolve) => {
     log('Wait verification code...')
-    setTimeout(() => resolve(null), timeout)
     mailClient
       .on('mail', (mail) => {
         log('Get new email:', mail.subject)
@@ -67,6 +66,10 @@ const waitCode = async (subject = 'Bybit', regex = /<strong>(\d{6})<\/strong>/, 
         retry++
         if (retry < 3) resolve(await waitCode(subject, regex, timeout, retry))
       })
+    setTimeout(() => {
+      mailClient.stop()
+      resolve(null)
+    }, timeout)
   })
 
 // Get 2fa token
@@ -300,7 +303,9 @@ const main = async () => {
         waitUntil: 'domcontentloaded'
       })
 
-      for (const address of addresses.filter((address) => !alreadyExist.includes(address))) {
+      const filtered = addresses.filter((address) => !alreadyExist.includes(address))
+      log(`${alreadyExist.length} already added, ${filtered.length} for processing...`)
+      for (const address of filtered) {
         const result = await addBybitAddress(page, address, settings).catch((e) => false)
         if (result) {
           addresses = addresses.filter((item) => item.toLowerCase() !== address)
