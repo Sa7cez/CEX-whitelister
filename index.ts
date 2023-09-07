@@ -8,10 +8,10 @@ import fs from 'fs'
 import got from 'got'
 import Ask from './asks'
 import delay from 'delay'
+import { randomInt } from 'crypto'
 
 // Settings
 dotenv.config()
-chromium.use(StealthPlugin())
 
 // Const
 const log = console.log,
@@ -24,10 +24,13 @@ const log = console.log,
   EMAIL_HOST = process.env.EMAIL_HOST || 'imap.gmail.com',
   EMAIL_PORT = process.env.EMAIL_PORT || 993,
   TELEGRAM = process.env.TELEGRAM || null,
-  ADMIN = process.env.ADMIN || null
+  ADMIN = process.env.ADMIN || null,
+  SITEKEY = '6LeNsZIUAAAAANOHTT1IaGp-RlIFHP2-YyaponYD'
 
 // Initialize email listener
 let email = false
+let code = null
+
 const mailClient = notifier({
   user: EMAIL_LOGIN,
   password: EMAIL_PASSWORD,
@@ -49,27 +52,31 @@ const mailClient = notifier({
   .stop()
 
 //  Wait verification code on email
-const waitCode = async (subject = 'Bybit', regex = /<strong>(\d{6})<\/strong>/, timeout = 45000, retry = 0) =>
+const waitCode = async (subject = 'Bybit', regex = /<strong>(\d{6})<\/strong>/, timeout = 60000, retry = 0) =>
   new Promise<string>((resolve) => {
     log('Wait verification code...')
-    mailClient
-      .on('mail', (mail) => {
-        log('Get new email:', mail.subject)
-        const links = mail.subject.indexOf(subject) > -1 && (mail.html ? mail.html.match(regex) : null)
-        if (links) {
-          mailClient.stop()
-          resolve(links.pop())
-        }
-      })
-      .start()
-      .on('error', async () => {
-        retry++
-        if (retry < 3) resolve(await waitCode(subject, regex, timeout, retry))
-      })
-    setTimeout(() => {
-      mailClient.stop()
+    try {
+      mailClient
+        .on('mail', (mail) => {
+          log('Get new email:', mail.subject)
+          const links = mail.subject.indexOf(subject) > -1 && (mail.html ? mail.html.match(regex) : null)
+          if (links) {
+            mailClient.stop()
+            resolve(links.pop())
+          }
+        })
+        .start()
+        .on('error', async () => {
+          retry++
+          if (retry < 3) resolve(await waitCode(subject, regex, timeout, retry))
+        })
+      setTimeout(() => {
+        mailClient.stop()
+        resolve(null)
+      }, timeout)
+    } catch (e) {
       resolve(null)
-    }, timeout)
+    }
   })
 
 // Get 2fa token
@@ -99,6 +106,16 @@ const notify = async (message = 'Please back to browser and solve captcha!') =>
       })
     : log(message)
 
+// Get Bybit addresses list
+const getBybitAddressesList = async (page, network) => {
+  const response = await page.goto(
+    `https://api2.bybit.com/v3/private/cht/asset-withdraw/address/address-list?coin=${network}&address_type=2&page=1&limit=10000`
+  )
+  const addresses = await response.json().then((r) => r.result.data.map((i) => i.address.toLowerCase()))
+  fs.promises.writeFile(`added-BYBIT-${network}.txt`, [...new Set(addresses)].join('\n'))
+  return addresses
+}
+
 // Add bybit address
 const addBybitAddress = async (page: Page, address: string, settings: any) => {
   log('Try to add', address)
@@ -115,13 +132,16 @@ const addBybitAddress = async (page: Page, address: string, settings: any) => {
   await page.getByRole('button').filter({ hasText: 'Confirm' }).click()
 
   let code = null
-  for (;;) {
-    await page
-      .getByRole('button')
-      .filter({ hasText: /(Resend|Get\sCode)/ })
-      .click({ timeout: 10000 })
-      .catch(() => notify())
+  // for (;;) {
+  const result = await page
+    .getByRole('button')
+    .filter({ hasText: /(Resend|Get\sCode)/ })
+    .click({ timeout: 10000 })
+    .catch(() => {
+      return -1
+    })
 
+  if (result !== -1) {
     log('Code:', (code = (await waitCode()) || code))
 
     if (code) {
@@ -129,7 +149,11 @@ const addBybitAddress = async (page: Page, address: string, settings: any) => {
       await page.waitForTimeout(100)
       return !(await page.isVisible('.ant-modal-content', { timeout: 5000 }))
     }
+  } else {
+    notify()
+    return false
   }
+  // }
 }
 
 // Add OKX addresses
@@ -143,17 +167,17 @@ const fillList = async (list, addresses, remark) => {
   if (remark) for (const element of await list.getByPlaceholder('e.g. my wallet').all()) await element.fill(remark)
 }
 
-const tryConfirm = async (page, code) => {
+const tryConfirm = async (page: Page, code) => {
   try {
-    if (code) await page.getByPlaceholder('Enter email code').fill(code)
+    if (code) await page.getByPlaceholder('Enter code').first().fill(code)
     log(`Email code: ${code}`)
     await page.waitForTimeout(200)
     try {
-      await page.getByText('Authentication app', { exact: true, timeout: 2000 }).click()
+      await page.getByText('authenticator app', { exact: true }).click()
     } catch (e) {
       log('Skip switching...')
     }
-    await page.getByPlaceholder('Enter the authentication app code').fill(getToken(OKX_AUTHENTICATOR))
+    await page.getByPlaceholder('Enter code').nth(1).fill(getToken(OKX_AUTHENTICATOR))
     await page.getByRole('button').filter({ hasText: 'Confirm' }).click()
     return true
   } catch (e) {
@@ -168,15 +192,27 @@ const addNewBatchOfAddresses = async (page: Page, targetPage, addresses, setting
   })
   await page.getByRole('button').filter({ hasText: 'Add a new address' }).click()
 
-  await page.getByPlaceholder('Select').click()
-  await page.locator('.okui-select-item.okui-select-item-border-box', { hasText: settings.direction }).click()
+  await page.waitForTimeout(500)
+
+  await page.locator('.okui-select').first().click({ force: true })
+  await page.locator('.okui-select-item.okui-select-item-border-box', { hasText: settings.type }).click()
+
+  await page.waitForTimeout(100)
+
+  if (settings.type !== 'EVM address') {
+    await page.locator('.okui-select').nth(1).click({ force: true })
+    await page.locator('.okui-select-item.okui-select-item-border-box', { hasText: settings.direction }).click()
+  }
 
   for (let i = 0; i < addresses.length - 1; i++) await page.getByText('Add address', { exact: true }).click()
   await fillList(page, addresses, settings.remark)
   for (const element of await page.getByRole('checkbox').all()) await element.check()
 
+  await page.getByText('Save', { exact: true }).first().click()
+
   await page.getByText('Send code', { exact: true }).first().click()
-  const code = await waitCode('verification code', /(\d{6})<\/div>/, 60000)
+  const code = await waitCode('Add verified withdrawal address', /(\d{6})<\/div>/, 60000)
+  log('Get code', code)
   return await tryConfirm(page, code)
 }
 
@@ -202,7 +238,7 @@ const main = async () => {
   if (OKX) platforms.push('OKX')
   if (BYBIT) platforms.push('BYBIT')
 
-  await delay(3000)
+  await delay(7000)
 
   log('Check credentials:\n')
   log('  OKX 2fa token:', OKX, OKX ? 'OK' : 'add OKX_AUTHENTICATOR to enviroments if you need it!')
@@ -213,6 +249,7 @@ const main = async () => {
 
   let platform = await ui.askPlatform(platforms)
   let settings = await ui.askSettings(platform)
+
   if (platform === 'BYBIT') settings.show = true
 
   const sessionExisted = fs.existsSync(`${platform}.json`)
@@ -230,9 +267,13 @@ const main = async () => {
   if (!sessionExisted) {
     if (platform === 'OKX') {
       await page.goto('https://www.okx.com/account/login')
-      await page.getByRole('button').filter({ hasText: 'Accept All Cookies' }).click()
-      await page.getByText('QR code').click({ force: true })
-      await page.waitForSelector('.qr-container-v2')
+      try {
+        await page.getByRole('button').filter({ hasText: 'Accept All Cookies' }).click()
+        await page.getByText('QR code').click({ force: true })
+        await page.waitForSelector('.qr-container-v2')
+      } catch (e) {
+        log('Skip cookies popup and direct QR mode.')
+      }
       await page.waitForSelector('.verify-code-module')
       const code = getToken(OKX_AUTHENTICATOR)
       await page.keyboard.type(code)
@@ -256,10 +297,14 @@ const main = async () => {
       // Filter already added addresses
       page.on('response', async (response) => {
         if (response.url().indexOf('withdraw/address-by-type') > -1) {
-          const added = (await response.json()).data.addressList
-            .filter((i) => i.targetTypeStr === settings.direction)
-            .map((i) => i.address.toLowerCase())
-          log(`You have ${added.length} addresses in OKX whitelist!`)
+          const existed = (await response.json()).data.addressList
+          const added = existed.map((i) => i.address.toLowerCase())
+          log(`You have ${existed.length} addresses in OKX whitelist!`)
+          log(`${added.length} addresses already added!`)
+          if (settings.type === 'Delete addresses' && existed.length > 0) {
+            await page.getByText('Delete', { exact: true }).first().click()
+            await page.getByText('Confirm', { exact: true }).first().click()
+          }
           await fs.promises.writeFile(`added-${platform}-${settings.direction}.txt`, added.join('\n'))
           addresses = addresses.filter((address) => !added.includes(address))
           log(`Estimate ${addresses.length} new addresses to add!\n`)
@@ -274,47 +319,57 @@ const main = async () => {
           ? 'usdc/283'
           : settings.direction.startsWith('USDT')
           ? 'usdt/7'
+          : settings.direction.startsWith('CORE')
+          ? 'core/2806'
           : 'matic/1696')
 
       await page.goto(targetPage, {
-        waitUntil: 'networkidle'
+        waitUntil: 'networkidle',
+        timeout: 60000
       })
 
+      await page.waitForTimeout(5000)
+
       // Processing
-      while (addresses.length > 0) {
-        try {
-          const batch = addresses.slice(0, 20)
-          await addNewBatchOfAddresses(page, targetPage, batch, settings)
-          await page.waitForTimeout(60000)
-        } catch (e) {
-          log(e, 'Something wrong, retry')
-        }
+      if (settings.type !== 'Delete addresses') {
+        log('Start processing...')
+        do {
+          try {
+            const batch = addresses.slice(0, 20)
+            await addNewBatchOfAddresses(page, targetPage, batch, settings)
+            await page.waitForTimeout(20000)
+          } catch (e) {
+            log(e, 'Something wrong, retry')
+          }
+        } while (addresses.length > 0)
       }
+
       break
 
     case 'BYBIT':
-      const response = await page.goto(
-        `https://api2.bybit.com/v3/private/cht/asset-withdraw/address/address-list?coin=${settings.blockchain}&address_type=2&page=1&limit=10000`
-      )
-      const alreadyExist = await response.json().then((r) => r.result.data.map((i) => i.address))
-      fs.promises.writeFile(`added-BYBIT-${settings.blockchain}.txt`, alreadyExist.join('\n'))
+      const alreadyExist = await getBybitAddressesList(page, settings.blockchain)
 
       await page.goto('https://www.bybit.com/user/assets/money-address', {
         waitUntil: 'domcontentloaded'
       })
 
-      const filtered = addresses.filter((address) => !alreadyExist.includes(address))
+      let filtered = addresses.filter((address) => !alreadyExist.includes(address))
       log(`${alreadyExist.length} already added, ${filtered.length} for processing...`)
-      for (const address of filtered) {
+
+      while (filtered.length > 0) {
+        const address = filtered[0]
         const result = await addBybitAddress(page, address, settings).catch((e) => false)
         if (result) {
-          addresses = addresses.filter((item) => item.toLowerCase() !== address)
-          log(`Success, delete key ...${address.slice(-10)} from ${FILE}`)
-          await fs.promises.writeFile(FILE, addresses.join('\n'))
+          filtered = filtered.filter((item) => item.toLowerCase() !== address)
+          log(`Success, delete key ...${address.slice(-10)} from ${FILE}\nRemains: ${filtered.length}`)
         }
         log('Result:', result, `\nWait ${settings.timeout} seconds...\n`)
-        await page.reload({ waitUntil: 'domcontentloaded' })
-        await page.waitForTimeout(settings.timeout * 1000)
+        if (filtered.length > 0) {
+          await page.reload({ waitUntil: 'domcontentloaded' })
+          await page.waitForTimeout(settings.timeout * 1000 + randomInt(5000))
+        } else {
+          await getBybitAddressesList(page, settings.blockchain)
+        }
       }
 
       break

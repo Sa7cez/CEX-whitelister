@@ -29,23 +29,18 @@ const questions = {
   ],
   OKX: [
     {
+      name: 'type',
+      type: 'list',
+      message: 'Choose address type:',
+      choices: ['Universal address', 'EVM address', 'Delete addresses'],
+      default: 'EVM address'
+    },
+    {
       name: 'direction',
       type: 'list',
-      message: 'Choose direction:',
-      choices: [
-        'ETH-ERC20',
-        'ETH-Arbitrum one',
-        'ETH-zkSync Lite',
-        'ETH-Optimism',
-        'USDC-Optimism',
-        'USDC-Arbitrum one',
-        'USDC-Polygon',
-        'USDT-Optimism',
-        'USDT-Arbitrum one',
-        'USDT-Polygon',
-        'MATIC-Polygon'
-      ],
-      default: 'ETH-Arbitrum one'
+      message: 'Choose network:',
+      choices: ['ETH-ERC20', 'ETH-StarkNet'],
+      default: 'ETH-ERC20'
     },
     {
       name: 'remark',
@@ -78,6 +73,28 @@ class Ask {
 
   async askSettings(platform) {
     return await inquirer.prompt(questions[platform])
+  }
+
+  async askMode(platform) {
+    const answers = await inquirer.prompt([
+      {
+        name: 'platform',
+        type: 'list',
+        message: `Choose mode:`,
+        choices: [
+          {
+            name: 'Add addresses',
+            value: 'add'
+          },
+          {
+            name: 'Add subbaccounts',
+            value: 'subaccounts'
+          }
+        ],
+        default: 'add'
+      }
+    ])
+    return answers.platform
   }
 }
 
